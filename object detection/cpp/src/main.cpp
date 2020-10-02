@@ -20,7 +20,7 @@
 
 /*********************************************************************************
  ** This sample demonstrates how to capture 3D point cloud and detected objects **
- **      with the ZED SDK and display the result in an OpenGL window. 	        **
+ **      with the ZED SDK and display the result in an OpenGL window.           **
  *********************************************************************************/
 
 // Standard includes
@@ -50,7 +50,46 @@ void parseArgs(int argc, char **argv, InitParameters& param);
 bool checkIsJetson();
 
 
+std::mutex logMutex;
+
+
+bool fileExists(std::string& fileName) {
+    return static_cast<bool>(std::ifstream(fileName));
+}
+
+template <typename filename, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8, typename T9, typename T10>
+bool writeCsvFile(filename &fileName, T1 column1, T2 column2, T3 column3,  T4 column4, T5 column5, T6 column6, T7 column7, T8 column8, T9 column9, T10 column10) {
+    std::lock_guard<std::mutex> csvLock(logMutex);
+    std::fstream file;
+    file.open (fileName, std::ios::out | std::ios::app);
+    if (file) {
+        file << "\""  << column1 << "\",";
+        file << "\""  << column2 << "\",";
+        file << "\""  << column3 << "\",";
+        file << "\""  << column4 << "\",";
+        file << "\""  << column5 << "\",";
+        file << "\""  << column6 << "\",";
+        file << "\""  << column7 << "\",";
+        file << "\""  << column8 << "\",";
+        file << "\""  << column9 << "\",";
+        file << "\""  << column10 << "\"";
+        file <<  std::endl;
+        return true;
+    } else {
+        return false;
+    }
+}
+
+
+
 int main(int argc, char **argv) {
+
+
+    std::string csvFile = "../output_data.csv";
+
+    // if(!fileExists(csvFile))
+    writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence");
+
     // Create ZED objects
     Camera zed;
     InitParameters init_parameters;
@@ -100,6 +139,8 @@ int main(int argc, char **argv) {
 
     // Detection output
     Objects objects;
+
+
     bool quit = false;
 
 #if ENABLE_GUI
@@ -129,6 +170,9 @@ int main(int argc, char **argv) {
     Mat point_cloud(pc_resolution, MAT_TYPE::F32_C4, MEM::GPU);
     GLViewer viewer;
     viewer.init(argc, argv, camera_parameters);
+
+
+
 #endif
 
     sl::RuntimeParameters runtime_parameters;
@@ -137,6 +181,7 @@ int main(int argc, char **argv) {
     Pose cam_pose;
     cam_pose.pose_data.setIdentity();
     bool gl_viewer_available=true;
+
     while (
 #if ENABLE_GUI
             gl_viewer_available &&
@@ -144,8 +189,8 @@ int main(int argc, char **argv) {
             !quit && zed.grab(runtime_parameters) == ERROR_CODE::SUCCESS) {
         detection_parameters_rt.detection_confidence_threshold = detection_confidence;
         returned_stated = zed.retrieveObjects(objects, detection_parameters_rt);
-
         if ((returned_stated == ERROR_CODE::SUCCESS) && objects.is_new) {
+
 #if ENABLE_GUI
             zed.retrieveMeasure(point_cloud, MEASURE::XYZRGBA, MEM::GPU, pc_resolution);
             zed.getPosition(cam_pose, REFERENCE_FRAME::WORLD);
@@ -156,8 +201,74 @@ int main(int argc, char **argv) {
             render_2D(image_left, img_scale, objects.object_list, true);
             zed.getPosition(cam_pose, REFERENCE_FRAME::CAMERA);
             track_view_generator.generate_view(objects, cam_pose, track_view, objects.is_tracked);
-#else
-            cout << "Detected " << objects.object_list.size() << " Object(s)" << endl;
+// #else
+            // cout << "Detected " << objects.object_list.size() << " Object(s)" << endl;
+
+            // if (!objects.object_list.empty()) {
+            if (objects.is_tracked) {
+
+                cout << objects.object_list.size() << " Object(s) detected\n\n";
+
+                if (!objects.object_list.empty()) {
+
+                    auto first_object = objects.object_list.front();
+                    
+                    auto timestamp = zed.getTimestamp(sl::TIME_REFERENCE::IMAGE); // Get image timestamp
+                    auto framerate = zed.getCurrentFPS();
+
+                    cout << "First object attributes :\n";
+                    cout << " Label '" << first_object.label << "' (conf. "
+                        << first_object.confidence << "/100)\n";
+
+                    if (detection_parameters.enable_tracking)
+                        cout << " Tracking ID: " << first_object.id << " tracking state: " <<
+                        first_object.tracking_state << " / " << first_object.action_state << "\n";
+
+                    cout << " 3D position: " << first_object.position <<
+                        " Velocity: " << first_object.velocity << "\n";
+
+                    cout << " 3D dimensions: " << first_object.dimensions << "\n";
+
+                    if (first_object.mask.isInit())
+                        cout << " 2D mask available\n";
+
+                    cout << " Bounding Box 2D \n";
+                    std::ofstream myfile;
+                    myfile.open ("../bounding_boxes_2D.csv", std::ios::out | std::ios::app);
+                    myfile << timestamp << ",";
+                    for (auto it : first_object.bounding_box_2d)
+                        // cout << "    " << it <<"\n";
+                        myfile << it << ",";
+                    myfile << "\n";
+                    myfile.close();
+                    for (auto it : first_object.bounding_box_2d)
+                        cout << "    " << it <<"\n";
+
+
+                    std::ofstream myfile2;
+                    myfile2.open ("../bounding_boxes_3D.csv", std::ios::out | std::ios::app);
+                    cout << " Bounding Box 3D \n";
+                    myfile2 << timestamp << "," ;
+                    for (auto it : first_object.bounding_box)
+                        myfile2 << it << "," ;
+                    myfile2 << "\n";
+                    myfile2.close();
+                    for (auto it : first_object.bounding_box)
+                        cout << "    " << it <<"\n";
+
+                    // cout << "\nPress 'Enter' to continue...\n";
+                    // cin.ignore();
+                    cout << "timestamp " << timestamp << "\n";
+                    cout << "framerate " << framerate << "\n";
+
+
+                    if (!writeCsvFile(csvFile, timestamp, framerate, first_object.id, first_object.label , first_object.tracking_state, first_object.action_state, first_object.position,  first_object.velocity, first_object.dimensions, first_object.confidence )) {
+                        std::cerr << "Failed to write to file: " << csvFile << "\n";
+                    } 
+                }
+            }    
+
+        
 #endif
         }
 
@@ -187,7 +298,7 @@ int main(int argc, char **argv) {
         } else if (key == 'e') {
             detection_parameters_rt.object_class_filter.clear();
             cout << "No filter" << endl;
-        }
+        } 
         
 #endif
     }
@@ -247,7 +358,6 @@ void parseArgs(int argc, char **argv, InitParameters& param) {
             cout << "[Sample] Using Camera in resolution VGA" << endl;
         }
     } else {
-        // Default
     }
 }
 
