@@ -92,8 +92,9 @@ int main(int argc, char **argv) {
 
     std::string csvFile = "../output_data.csv";
 
-    // if(!fileExists(csvFile))
-    writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence");
+    if(!fileExists(csvFile)) {
+        writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence");
+    }
 
     // Create ZED objects
     Camera zed;
