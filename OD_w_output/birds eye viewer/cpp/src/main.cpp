@@ -92,9 +92,8 @@ int main(int argc, char **argv) {
 
     std::string csvFile = "../output_data.csv";
 
-    if(!fileExists(csvFile)) {
-        writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence");
-    }
+    // if(!fileExists(csvFile))
+    writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence");
 
     // Create ZED objects
     Camera zed;
@@ -102,10 +101,13 @@ int main(int argc, char **argv) {
     init_parameters.camera_resolution = RESOLUTION::HD720;
 	init_parameters.sdk_verbose = true;
     init_parameters.camera_fps = 100;
+
     // On Jetson (Nano, TX1/2) the object detection combined with an heavy depth mode could reduce the frame rate too much
     init_parameters.depth_mode = isJetson ? DEPTH_MODE::PERFORMANCE : DEPTH_MODE::ULTRA;
     // init_parameters.depth_mode = sl::DEPTH_MODE::NONE; // no depth computation required here
-
+    init_parameters.coordinate_units = UNIT::METER;
+	init_parameters.depth_minimum_distance = 0.15 ; //
+	// zed.setDepthMaxRangeValue(40); // Set the maximum depth perception distance to 40m Set
     init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
     init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; // OpenGL's coordinate system is right_handed
     parseArgs(argc, argv, init_parameters);
@@ -124,6 +126,16 @@ int main(int argc, char **argv) {
     detection_parameters.detection_model = isJetson ? DETECTION_MODEL::MULTI_CLASS_BOX : DETECTION_MODEL::MULTI_CLASS_BOX_ACCURATE;
 
     auto camera_config = zed.getCameraInformation().camera_configuration;
+
+    if (detection_parameters.enable_tracking) {
+    // Set positional tracking parameters
+    PositionalTrackingParameters positional_tracking_parameters;
+    positional_tracking_parameters.set_floor_as_origin = true;
+ 
+    // Enable positional tracking
+    zed.enablePositionalTracking(positional_tracking_parameters);
+	}
+
 
     PositionalTrackingParameters positional_tracking_parameters;
     // If the camera is static in space, enabling this settings below provides better depth quality and faster computation
@@ -184,6 +196,7 @@ int main(int argc, char **argv) {
 #endif
 
     RuntimeParameters runtime_parameters;
+    runtime_parameters.measure3D_reference_frame = REFERENCE_FRAME::WORLD;
     runtime_parameters.confidence_threshold = 50;
         
     Pose cam_pose;
