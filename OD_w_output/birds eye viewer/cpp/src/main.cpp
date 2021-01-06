@@ -84,8 +84,8 @@ bool fileExists(std::string& fileName) {
     return static_cast<bool>(std::ifstream(fileName));
 }
 
-template <typename filename, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8, typename T9, typename T10>
-bool writeCsvFile(filename &fileName, T1 column1, T2 column2, T3 column3,  T4 column4, T5 column5, T6 column6, T7 column7, T8 column8, T9 column9, T10 column10) {
+template <typename filename, typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8, typename T9, typename T10, typename T11,typename T12>
+bool writeCsvFile(filename &fileName, T1 column1, T2 column2, T3 column3,  T4 column4, T5 column5, T6 column6, T7 column7, T8 column8, T9 column9, T10 column10, T11 column11, T12 column12) {
     std::lock_guard<std::mutex> csvLock(logMutex);
     std::fstream file;
     file.open (fileName, std::ios::out | std::ios::app);
@@ -99,7 +99,9 @@ bool writeCsvFile(filename &fileName, T1 column1, T2 column2, T3 column3,  T4 co
         file << "\""  << column7 << "\",";
         file << "\""  << column8 << "\",";
         file << "\""  << column9 << "\",";
-        file << "\""  << column10 << "\"";
+        file << "\""  << column10 << "\",";
+        file << "\""  << column11 << "\",";
+        file << "\""  << column12 << "\"";
         file <<  std::endl;
         return true;
     } else {
@@ -107,20 +109,20 @@ bool writeCsvFile(filename &fileName, T1 column1, T2 column2, T3 column3,  T4 co
     }
 }
 
-template <typename filename, typename T1, typename T2>
-bool writeCamera_pose(filename &fileName, T1 column1, T2 column2) {
-    std::lock_guard<std::mutex> csvLock(logMutex);
-    std::fstream file;
-    file.open (fileName, std::ios::out | std::ios::app);
-    if (file) {
-        file << "\""  << column1 << "\",";
-        file << "\""  << column2 << "\",";
-        file <<  std::endl;
-        return true;
-    } else {
-        return false;
-    }
-}
+// template <typename filename, typename T1, typename T2>
+// bool writeCamera_pose(filename &fileName, T1 column1, T2 column2) {
+//     std::lock_guard<std::mutex> csvLock(logMutex);
+//     std::fstream file;
+//     file.open (fileName, std::ios::out | std::ios::app);
+//     if (file) {
+//         file << "\""  << column1 << "\",";
+//         file << "\""  << column2 << "\"";
+//         file <<  std::endl;
+//         return true;
+//     } else {
+//         return false;
+//     }
+// }
 
 
 int main(int argc, char **argv) {
@@ -135,12 +137,12 @@ int main(int argc, char **argv) {
     std::string path = "../Data/";
     // std::string data_name{ date::format("%Y%m%e_%Hh%Mm%Ss.csv", now) };
     std::string csvFile = path + "output_data.csv";
-    std::string csvFile_cam = path +"camera_pose.csv";
+    // std::string csvFile_cam = path +"camera_pose.csv";
 
 
     // if(!fileExists(csvFile))
-    writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence");
-    writeCamera_pose(csvFile_cam, "Translation", "Orientation");
+    writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence", "Camera_Translation", "Camera_Orientation");
+    // writeCamera_pose(csvFile_cam, "Translation", "Orientation");
 
     // Create ZED objects
     Camera zed;
@@ -343,15 +345,6 @@ int main(int argc, char **argv) {
 	            
 	            // cout<<"Image resolution: "<< image.getWidth()<<"x"<<image.getHeight() <<" || Image timestamp: "<<image.timestamp.data_ns<<endl;
 
-
-	            //                 get the translation information
-	            auto zed_translation = zed_pose.getTranslation();
-	            // get the orientation information
-	            auto zed_orientation = zed_pose.getOrientation();
-
-
-	            // Display the translation and timestamp
-	            cout << "Camera Translation: {" << zed_translation << "}, Orientation: {" << zed_orientation << "}";
 	                        // Display IMU data
 	            if (zed_has_imu) {
 	                 // Get IMU data at the time the image was captured
@@ -362,10 +355,19 @@ int main(int argc, char **argv) {
 	                // get raw acceleration
 	                auto acceleration = sensor_data.imu.linear_acceleration;
 
-	                cout << "IMU Orientation: {" << zed_orientation << "}, Acceleration: {" << acceleration << "}\n";
+	                cout << "IMU Orientation: {" << imu_orientation << "}, Acceleration: {" << acceleration << "}\n";
 	            }
 
                 if (!objects.object_list.empty()) {
+
+                		            //                 get the translation information
+		            auto zed_translation = zed_pose.getTranslation();
+		            // get the orientation information
+		            auto zed_orientation = zed_pose.getOrientation();
+
+		            // Display the translation and timestamp
+		            cout << "Camera Translation: {" << zed_translation << "}, Orientation: {" << zed_orientation << "}";
+
 
                     auto first_object = objects.object_list.front();
                     
@@ -420,13 +422,13 @@ int main(int argc, char **argv) {
                     cout << "framerate " << framerate << "\n";
 
 
-                    if (!writeCsvFile(csvFile, timestamp, framerate, first_object.id, first_object.label , first_object.tracking_state, first_object.action_state, first_object.position,  first_object.velocity, first_object.dimensions, first_object.confidence )) {
+                    if (!writeCsvFile(csvFile, timestamp, framerate, first_object.id, first_object.label , first_object.tracking_state, first_object.action_state, first_object.position,  first_object.velocity, first_object.dimensions, first_object.confidence , zed_translation, zed_orientation)) {
                         std::cerr << "Failed to write to file: " << csvFile << "\n";
                     } 
 
-                    if (!writeCamera_pose(csvFile, zed_pose.getTranslation(), zed_pose.getOrientation() )) {
-                        std::cerr << "Failed to write to file: " << csvFile_cam << "\n";
-                    } 
+                    // if (!writeCamera_pose(csvFile, zed_translation, zed_orientation )) {
+                    //     std::cerr << "Failed to write to file: " << csvFile_cam << "\n";
+                    // } 
 
                 }
             }    
