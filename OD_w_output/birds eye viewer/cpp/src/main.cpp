@@ -33,8 +33,13 @@
 #define ENABLE_GUI 1
 
 // ZED includes
+#include <opencv2/opencv.hpp>
 #include <sl/Camera.hpp>
+// Sample includes
+#include "utils.hpp"
 
+#include <ctime>
+// #include "date.h"
 // Sample includes
 #if ENABLE_GUI
 #include "GLViewer.hpp"
@@ -48,7 +53,29 @@ bool is_playback = false;
 void print(string msg_prefix, ERROR_CODE err_code = ERROR_CODE::SUCCESS, string msg_suffix = "");
 void parseArgs(int argc, char **argv, InitParameters& param);
 
+std::string datetime()
+{
+    time_t rawtime;
+    struct tm * timeinfo;
+    char buffer[80];
 
+    time (&rawtime);
+    timeinfo = localtime(&rawtime);
+
+    strftime(buffer,80,"%d-%m-%Y %H-%M-%S",timeinfo);
+    return std::string(buffer);
+}
+
+sl::Camera zed;
+// Save function using opencv
+
+// void saveSbSimage(std::string filename) {
+//     sl::Mat sbs_sl;
+//     // auto image_left_ocv = global_image(cv::Rect(0, 0, display_resolution.width, display_resolution.height));
+//    	zed.retrieveImage(sbs_sl, VIEW::LEFT);
+//     sbs_sl.write(filename.c_str());
+//     std::cout << "Image saved !" << std::endl;
+// }
 
 std::mutex logMutex;
 
@@ -80,6 +107,20 @@ bool writeCsvFile(filename &fileName, T1 column1, T2 column2, T3 column3,  T4 co
     }
 }
 
+template <typename filename, typename T1, typename T2>
+bool writeCamera_pose(filename &fileName, T1 column1, T2 column2) {
+    std::lock_guard<std::mutex> csvLock(logMutex);
+    std::fstream file;
+    file.open (fileName, std::ios::out | std::ios::app);
+    if (file) {
+        file << "\""  << column1 << "\",";
+        file << "\""  << column2 << "\",";
+        file <<  std::endl;
+        return true;
+    } else {
+        return false;
+    }
+}
 
 
 int main(int argc, char **argv) {
@@ -90,32 +131,50 @@ int main(int argc, char **argv) {
     const bool isJetson = false;
 #endif
 
-    std::string csvFile = "../output_data.csv";
+    auto now{ std::chrono::system_clock::now() };
+    std::string path = "../Data/";
+    // std::string data_name{ date::format("%Y%m%e_%Hh%Mm%Ss.csv", now) };
+    std::string csvFile = path + "output_data.csv";
+    std::string csvFile_cam = path +"camera_pose.csv";
+
 
     // if(!fileExists(csvFile))
     writeCsvFile(csvFile, "timestamp", "framerate", "ID", "Label", "Tracking State","Action State", "Position", "Velocity", "Dimensions" , "Detection Confidence");
+    writeCamera_pose(csvFile_cam, "Translation", "Orientation");
 
     // Create ZED objects
     Camera zed;
     InitParameters init_parameters;
-    init_parameters.camera_resolution = RESOLUTION::HD720;
+    init_parameters.camera_resolution = RESOLUTION::HD1080;
 	init_parameters.sdk_verbose = true;
-    init_parameters.camera_fps = 100;
+    init_parameters.camera_fps = 30;
 
     // On Jetson (Nano, TX1/2) the object detection combined with an heavy depth mode could reduce the frame rate too much
     init_parameters.depth_mode = isJetson ? DEPTH_MODE::PERFORMANCE : DEPTH_MODE::ULTRA;
+    init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; // Use a right-handed Y-up coordinate system
     // init_parameters.depth_mode = sl::DEPTH_MODE::NONE; // no depth computation required here
     init_parameters.coordinate_units = UNIT::METER;
-	init_parameters.depth_minimum_distance = 0.15 ; //
+	// init_parameters.depth_minimum_distance = 0.15 ; //
 	// zed.setDepthMaxRangeValue(40); // Set the maximum depth perception distance to 40m Set
     init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
-    init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; // OpenGL's coordinate system is right_handed
+    init_parameters.sensors_required = true;
+
     parseArgs(argc, argv, init_parameters);
     
     // Open the camera
     auto returned_state  = zed.open(init_parameters);
     if (returned_state != ERROR_CODE::SUCCESS) {
         print("Camera Open", returned_state, "Exit program.");
+        return EXIT_FAILURE;
+    }
+
+    
+    // Enable recording with the filename specified in argument
+    String path_output = "../Data/recording.svo";
+    returned_state = zed.enableRecording(RecordingParameters(path_output, SVO_COMPRESSION_MODE::H264));
+    if (returned_state != ERROR_CODE::SUCCESS) {
+        print("Recording ZED : ", returned_state);
+        zed.close();
         return EXIT_FAILURE;
     }
 
@@ -140,9 +199,10 @@ int main(int argc, char **argv) {
     PositionalTrackingParameters positional_tracking_parameters;
     // If the camera is static in space, enabling this settings below provides better depth quality and faster computation
     // positional_tracking_parameters.set_as_static = true;
+    positional_tracking_parameters.set_floor_as_origin = true;
     zed.enablePositionalTracking(positional_tracking_parameters);
 
-    print("Object Detection: Loading Module...");
+    // print("Object Detection: Loading Module...");
     returned_state = zed.enableObjectDetection(detection_parameters);
     if (returned_state != ERROR_CODE::SUCCESS) {
         print("enableObjectDetection", returned_state, "\nExit program.");
@@ -152,7 +212,7 @@ int main(int argc, char **argv) {
 
     // Detection runtime parameters
     // default detection threshold, apply to all object class
-    int detection_confidence = 50;
+    int detection_confidence = 35;
     ObjectDetectionRuntimeParameters detection_parameters_rt(detection_confidence);
     // To select a set of specific object classes:
     detection_parameters_rt.object_class_filter = {OBJECT_CLASS::VEHICLE, OBJECT_CLASS::PERSON, OBJECT_CLASS::ANIMAL};
@@ -163,7 +223,18 @@ int main(int argc, char **argv) {
 
     // Detection output
     Objects objects;
+    Pose zed_pose;
     bool quit = false;
+
+
+
+
+
+    // Check if the camera is a ZED M and therefore if an IMU is available
+    bool zed_has_imu = zed.getCameraInformation().sensors_configuration.isSensorAvailable(sl::SENSOR_TYPE::GYROSCOPE);
+    SensorsData sensor_data;
+
+
 
 #if ENABLE_GUI
 
@@ -197,7 +268,7 @@ int main(int argc, char **argv) {
 
     RuntimeParameters runtime_parameters;
     runtime_parameters.measure3D_reference_frame = REFERENCE_FRAME::WORLD;
-    runtime_parameters.confidence_threshold = 50;
+    runtime_parameters.confidence_threshold = 35;
         
     Pose cam_pose;
     cam_pose.pose_data.setIdentity();
@@ -224,18 +295,75 @@ int main(int argc, char **argv) {
             // zed.getPosition(cam_pose, REFERENCE_FRAME::WORLD);
             // viewer.updateData(point_cloud, objects.object_list, cam_pose.pose_data);
 
+
+		    print("SVO is Recording" );
+		    // SetCtrlHandler();
+		    int frames_recorded = 0;
+		    sl::RecordingStatus rec_status;
+
+			rec_status = zed.getRecordingStatus();
+		    if (rec_status.status)
+		        frames_recorded++;
+
             zed.retrieveImage(image_left, VIEW::LEFT, MEM::CPU, display_resolution);
+
             // as image_left_ocv is a ref of image_left, it contains directly the new grabbed image
             render_2D(image_left_ocv, img_scale, objects.object_list, true);
-            zed.getPosition(cam_pose, REFERENCE_FRAME::CAMERA);
+            zed.getPosition(cam_pose, REFERENCE_FRAME::WORLD);
             // update birds view of tracks based on camera position and detected objects
             track_view_generator.generate_view(objects, cam_pose, image_track_ocv, objects.is_tracked);
 // #else
 //             cout << "Detected " << objects.object_list.size() << " Object(s)" << endl;
 
+                // Start recording SVO, stop with Ctrl-C command
+		    // print("SVO is Recording" );
+		    // // SetCtrlHandler();
+		    // int frames_recorded = 0;
+		    // sl::RecordingStatus rec_status;
+
+	    	// rec_status = zed.getRecordingStatus();
+      //       if (rec_status.status)
+      //           frames_recorded++;
+
             if (objects.is_tracked) {
 
+
                 cout << objects.object_list.size() << " Object(s) detected\n\n";
+
+                zed.getPosition(zed_pose, REFERENCE_FRAME::WORLD); 
+                            // Get the left image
+	            // zed.retrieveImage(image, VIEW::LEFT,MEM::CPU);
+	            // zed.retrieveImage(image_left, VIEW::LEFT, MEM::CPU, display_resolution);
+
+	            // Convert sl::Mat to cv::Mat (share buffer)
+	            // cv::Mat cvImage(image.getHeight(), image.getWidth(), (image.getChannels() == 1) ? CV_8UC1 : CV_8UC4, image.getPtr<sl::uchar1>(sl::MEM::CPU));
+	            
+	            // saveSbSimage(std::string("ImagesFolder/ZEDImage") + std::to_string(zed.getTimestamp(sl::TIME_REFERENCE::IMAGE)) + std::string(".png"));
+	            // Display the image resolution and its acquisition timestamp
+	            
+	            // cout<<"Image resolution: "<< image.getWidth()<<"x"<<image.getHeight() <<" || Image timestamp: "<<image.timestamp.data_ns<<endl;
+
+
+	            //                 get the translation information
+	            auto zed_translation = zed_pose.getTranslation();
+	            // get the orientation information
+	            auto zed_orientation = zed_pose.getOrientation();
+
+
+	            // Display the translation and timestamp
+	            cout << "Camera Translation: {" << zed_translation << "}, Orientation: {" << zed_orientation << "}";
+	                        // Display IMU data
+	            if (zed_has_imu) {
+	                 // Get IMU data at the time the image was captured
+	                zed.getSensorsData(sensor_data, TIME_REFERENCE::IMAGE);
+
+	                //get filtered orientation quaternion
+	                auto imu_orientation = sensor_data.imu.pose.getOrientation();
+	                // get raw acceleration
+	                auto acceleration = sensor_data.imu.linear_acceleration;
+
+	                cout << "IMU Orientation: {" << zed_orientation << "}, Acceleration: {" << acceleration << "}\n";
+	            }
 
                 if (!objects.object_list.empty()) {
 
@@ -264,7 +392,7 @@ int main(int argc, char **argv) {
 
                     cout << " Bounding Box 2D \n";
                     std::ofstream myfile;
-                    myfile.open ("../bounding_boxes_2D.csv", std::ios::out | std::ios::app);
+                    myfile.open (path + "bounding_boxes_2D.csv", std::ios::out | std::ios::app);
                     myfile << timestamp << ",";
                     for (auto it : first_object.bounding_box_2d)
                         // cout << "    " << it <<"\n";
@@ -276,7 +404,7 @@ int main(int argc, char **argv) {
 
 
                     std::ofstream myfile2;
-                    myfile2.open ("../bounding_boxes_3D.csv", std::ios::out | std::ios::app);
+                    myfile2.open (path + "bounding_boxes_3D.csv", std::ios::out | std::ios::app);
                     cout << " Bounding Box 3D \n";
                     myfile2 << timestamp << "," ;
                     for (auto it : first_object.bounding_box)
@@ -295,6 +423,11 @@ int main(int argc, char **argv) {
                     if (!writeCsvFile(csvFile, timestamp, framerate, first_object.id, first_object.label , first_object.tracking_state, first_object.action_state, first_object.position,  first_object.velocity, first_object.dimensions, first_object.confidence )) {
                         std::cerr << "Failed to write to file: " << csvFile << "\n";
                     } 
+
+                    if (!writeCamera_pose(csvFile, zed_pose.getTranslation(), zed_pose.getOrientation() )) {
+                        std::cerr << "Failed to write to file: " << csvFile_cam << "\n";
+                    } 
+
                 }
             }    
 
@@ -357,6 +490,8 @@ int main(int argc, char **argv) {
     image_left.free();
 #endif
     zed.disableObjectDetection();
+    zed.disablePositionalTracking();
+    zed.disableRecording();
     zed.close();
     return EXIT_SUCCESS;
 }
