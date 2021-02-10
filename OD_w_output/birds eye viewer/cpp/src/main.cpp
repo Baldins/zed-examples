@@ -126,6 +126,12 @@ bool writeCsvFile(filename &fileName, T1 column1, T2 column2, T3 column3,  T4 co
 
 
 int main(int argc, char **argv) {
+
+    // if (argc < 2) {
+    //     cout << "Usage : Only the path of the output SVO file should be passed as argument.\n";
+    //     return EXIT_FAILURE;
+    // }
+
     
 #ifdef _SL_JETSON_
     const bool isJetson = true;
@@ -148,18 +154,22 @@ int main(int argc, char **argv) {
     Camera zed;
     InitParameters init_parameters;
     init_parameters.camera_resolution = RESOLUTION::HD1080;
+    init_parameters.depth_mode = DEPTH_MODE::NONE;
+
 	init_parameters.sdk_verbose = true;
     init_parameters.camera_fps = 30;
 
+
     // On Jetson (Nano, TX1/2) the object detection combined with an heavy depth mode could reduce the frame rate too much
     init_parameters.depth_mode = isJetson ? DEPTH_MODE::PERFORMANCE : DEPTH_MODE::ULTRA;
+    init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
     init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP; // Use a right-handed Y-up coordinate system
     // init_parameters.depth_mode = sl::DEPTH_MODE::NONE; // no depth computation required here
     init_parameters.coordinate_units = UNIT::METER;
 	// init_parameters.depth_minimum_distance = 0.15 ; //
 	// zed.setDepthMaxRangeValue(40); // Set the maximum depth perception distance to 40m Set
-    init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
-    init_parameters.sensors_required = true;
+    // init_parameters.depth_maximum_distance = 10.0f * 1000.0f;
+    // init_parameters.sensors_required = true;
 
     parseArgs(argc, argv, init_parameters);
     
@@ -170,15 +180,6 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    
-    // Enable recording with the filename specified in argument
-    String path_output = "../Data/recording.svo";
-    returned_state = zed.enableRecording(RecordingParameters(path_output, SVO_COMPRESSION_MODE::H264));
-    if (returned_state != ERROR_CODE::SUCCESS) {
-        print("Recording ZED : ", returned_state);
-        zed.close();
-        return EXIT_FAILURE;
-    }
 
     // Define the Objects detection module parameters
     ObjectDetectionParameters detection_parameters;
@@ -198,11 +199,13 @@ int main(int argc, char **argv) {
 	}
 
 
-    PositionalTrackingParameters positional_tracking_parameters;
-    // If the camera is static in space, enabling this settings below provides better depth quality and faster computation
-    // positional_tracking_parameters.set_as_static = true;
-    positional_tracking_parameters.set_floor_as_origin = true;
-    zed.enablePositionalTracking(positional_tracking_parameters);
+    // PositionalTrackingParameters positional_tracking_parameters;
+    // // If the camera is static in space, enabling this settings below provides better depth quality and faster computation
+    // // positional_tracking_parameters.set_as_static = true;
+    // positional_tracking_parameters.set_floor_as_origin = true;
+    // zed.enablePositionalTracking(positional_tracking_parameters);
+
+    
 
     // print("Object Detection: Loading Module...");
     returned_state = zed.enableObjectDetection(detection_parameters);
@@ -211,6 +214,28 @@ int main(int argc, char **argv) {
         zed.close();
         return EXIT_FAILURE;
     }
+
+    // Enable recording with the filename specified in argument
+    String path_output = "../Data/recording.svo";
+
+    returned_state = zed.enableRecording(RecordingParameters(path_output, SVO_COMPRESSION_MODE::H264));
+    if (returned_state != ERROR_CODE::SUCCESS) {
+        print("Recording ZED : ", returned_state);
+        zed.close();
+        return EXIT_FAILURE;
+    }
+
+    // Start recording SVO, stop with Ctrl-C command
+    print("SVO is Recording, use Ctrl-C to stop." );
+    // SetCtrlHandler();
+    int frames_recorded = 0;
+    sl::RecordingStatus rec_status;
+
+    // Each new frame is added to the SVO file
+    rec_status = zed.getRecordingStatus();
+    if (rec_status.status)
+        frames_recorded++;
+    print("Frame count: " +to_string(frames_recorded));
 
     // Detection runtime parameters
     // default detection threshold, apply to all object class
@@ -227,8 +252,6 @@ int main(int argc, char **argv) {
     Objects objects;
     Pose zed_pose;
     bool quit = false;
-
-
 
 
 
@@ -275,6 +298,12 @@ int main(int argc, char **argv) {
     Pose cam_pose;
     cam_pose.pose_data.setIdentity();
     bool gl_viewer_available=true;
+
+	// print("SVO is Recording" );
+ //    // SetCtrlHandler();
+ //    int frames_recorded = 0;
+ //    sl::RecordingStatus rec_status;
+
     while (
 #if ENABLE_GUI
             gl_viewer_available &&
@@ -296,16 +325,14 @@ int main(int argc, char **argv) {
             // zed.retrieveMeasure(point_cloud, MEASURE::XYZRGBA, MEM::GPU, pc_resolution);
             // zed.getPosition(cam_pose, REFERENCE_FRAME::WORLD);
             // viewer.updateData(point_cloud, objects.object_list, cam_pose.pose_data);
+		
+		    // Start recording SVO, stop with Ctrl-C command
 
 
-		    print("SVO is Recording" );
-		    // SetCtrlHandler();
-		    int frames_recorded = 0;
-		    sl::RecordingStatus rec_status;
 
-			rec_status = zed.getRecordingStatus();
-		    if (rec_status.status)
-		        frames_recorded++;
+			// rec_status = zed.getRecordingStatus();
+		 //    if (rec_status.status)
+		 //        frames_recorded++;
 
             zed.retrieveImage(image_left, VIEW::LEFT, MEM::CPU, display_resolution);
 
@@ -316,6 +343,7 @@ int main(int argc, char **argv) {
             track_view_generator.generate_view(objects, cam_pose, image_track_ocv, objects.is_tracked);
 // #else
 //             cout << "Detected " << objects.object_list.size() << " Object(s)" << endl;
+            
 
                 // Start recording SVO, stop with Ctrl-C command
 		    // print("SVO is Recording" );
