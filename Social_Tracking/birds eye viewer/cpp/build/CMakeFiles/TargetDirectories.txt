@@ -1,0 +1,3 @@
+/home/francesca/crowd_perception/Social_Tracking/birds eye viewer/cpp/build/CMakeFiles/rebuild_cache.dir
+/home/francesca/crowd_perception/Social_Tracking/birds eye viewer/cpp/build/CMakeFiles/ZED_Object_detection_birds_eye_viewer.dir
+/home/francesca/crowd_perception/Social_Tracking/birds eye viewer/cpp/build/CMakeFiles/edit_cache.dir

@@ -10,6 +10,7 @@ import numpy as np
 import array
 from enum import IntEnum
 
+from cv_viewer.utils import *
 import ogl_viewer.zed_model as zm
 import pyzed.sl as sl
 
@@ -60,35 +61,9 @@ M_PI = 3.1415926
 
 GRID_SIZE = 9.0
 
-CLASS_COLORS = np.array([
-	[44, 117, 255, 255] 
-	, [255, 0, 255, 255]
-	, [0, 0, 255, 255]	
-    , [0, 255, 255, 255]	
-    , [0, 255, 0, 255]	
-    , [255, 255, 255, 255]]
-    , np.float32)
-
-ID_COLORS = np.array([
-	[0.231, 0.909, 0.69, 1.]	
-    , [0.098, 0.686, 0.816, 1.]	
-    , [0.412, 0.4, 0.804, 1.]	
-    , [1, 0.725, 0, 1.]	
-    , [0.989, 0.388, 0.419, 1.]]
-    , np.float32)
-
-def get_color_class(_idx):
-    _idx = min(5, _idx)
-    return np.divide(CLASS_COLORS[_idx], 255.0)
-
 def generate_color_id(_idx):
-    clr = []
-    if _idx < 0:
-        clr = [236, 184, 36, 255]
-        clr = np.divide(clr, 255.0)
-    else:
-        offset = _idx % 5
-        clr = ID_COLORS[offset]
+    clr = np.divide(generate_color_id_u(_idx), 255.0)
+    clr[0], clr[2] = clr[2], clr[0]
     return clr
 
 class Shader:
@@ -200,9 +175,9 @@ class Simple3DObject:
         for i in range(len(current_pts)):
             self.add_pt(current_pts[i])
             if (i == 2 or i == 3):
-                _clr[2] = 0
+                _clr[3] = 0
             else:
-                _clr[2] = 0.75
+                _clr[3] = 0.75
             self.add_clr(_clr)
 
         box_links = np.array([0, 1, 1, 2, 2, 3, 3, 4, 4, 5])
@@ -394,7 +369,6 @@ class Simple3DObject:
 class GLViewer:
     def __init__(self):
         self.available = False
-        self.objects_name = []
         self.mutex = Lock()
         self.camera = CameraGL()
         self.wheelPosition = 0.
@@ -407,8 +381,9 @@ class GLViewer:
         self.BBox_edges = Simple3DObject(False, 3, 4)
         self.skeletons = Simple3DObject(False, 3, 4)
         self.point_cloud = Simple3DObject(False, 4)
+        self.is_tracking_on = False         # Show tracked objects only
 
-    def init(self, camera_model, res): # _params = sl.CameraParameters
+    def init(self, camera_model, res, is_tracking_on):
         glutInit(sys.argv)
         wnd_w = int(glutGet(GLUT_SCREEN_WIDTH)*0.9)
         wnd_h = int(glutGet(GLUT_SCREEN_HEIGHT) *0.9)
@@ -429,6 +404,8 @@ class GLViewer:
 
         glEnable(GL_LINE_SMOOTH)
         glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
+
+        self.is_tracking_on = is_tracking_on
 
         # Compile and create the shader for 3D objects
         self.shader_image = Shader(VERTEX_SHADER, FRAGMENT_SHADER)
@@ -507,10 +484,10 @@ class GLViewer:
         return self.available
 
     def render_object(self, _object_data):      # _object_data of type sl.ObjectData
-        if _object_data.tracking_state == sl.OBJECT_TRACKING_STATE.OK or _object_data.tracking_state == sl.OBJECT_TRACKING_STATE.OFF:
-            return True
+        if self.is_tracking_on:
+            return (_object_data.tracking_state == sl.OBJECT_TRACKING_STATE.OK)
         else:
-            return False
+           return (_object_data.tracking_state == sl.OBJECT_TRACKING_STATE.OK or _object_data.tracking_state == sl.OBJECT_TRACKING_STATE.OFF) 
 
     def updateData(self, pc, _objs):
         self.mutex.acquire()
@@ -520,16 +497,12 @@ class GLViewer:
         self.BBox_edges.clear()
         self.skeletons.clear()
         self.BBox_faces.clear()
-        self.objects_name = []
 
         for i in range(len(_objs.object_list)):
             if self.render_object(_objs.object_list[i]):
                 bounding_box = np.array(_objs.object_list[i].bounding_box)
                 if bounding_box.any():
-                    color_class = get_color_class(0)
                     color_id = generate_color_id(_objs.object_list[i].id)
-                    if _objs.object_list[i].tracking_state != sl.OBJECT_TRACKING_STATE.OK:
-                        color_id = color_class
 
                     self.create_bbox_rendering(bounding_box, color_id)
 

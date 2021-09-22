@@ -170,8 +170,8 @@ class GLViewer:
         self.txtT = ""
         self.txtR = ""
 
-    def init(self, _argc, _argv, camera_model): # _params = sl.CameraParameters
-        glutInit(_argc, _argv)
+    def init(self, camera_model): # _params = sl.CameraParameters
+        glutInit()
         wnd_w = int(glutGet(GLUT_SCREEN_WIDTH)*0.9)
         wnd_h = int(glutGet(GLUT_SCREEN_HEIGHT) *0.9)
         glutInitWindowSize(wnd_w, wnd_h)
@@ -249,7 +249,7 @@ class GLViewer:
                     index = int(zm.yellow_triangles_m[i + j] - 1)
                     self.zedModel.add_point_clr([zm.vertices_m[index * 3], zm.vertices_m[index * 3 + 1], zm.vertices_m[index * 3 + 2]], [zm.YELLOW_COLOR.r, zm.YELLOW_COLOR.g, zm.YELLOW_COLOR.b] )
 
-        elif(camera_model == sl.MODEL.ZED2):
+        elif((camera_model == sl.MODEL.ZED2) or (camera_model == sl.MODEL.ZED2i)):
             for i in range(0, zm.NB_ALLUMINIUM_TRIANGLES * 3, 3):
                 for j in range(3):
                     index = int(zm.alluminium_triangles[i + j] - 1)

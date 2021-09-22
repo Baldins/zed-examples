@@ -32,9 +32,9 @@ if __name__ == "__main__":
 
     # Create a InitParameters object and set configuration parameters
     init_params = sl.InitParameters()
-    init_params.camera_resolution = sl.RESOLUTION.HD720  # Use HD720 video mode    
+    init_params.camera_resolution = sl.RESOLUTION.HD1080  # Use HD1080 video mode    
     init_params.coordinate_units = sl.UNIT.METER
-    init_params.camera_fps = 15                          # Set fps at 15
+    init_params.camera_fps = 30                          # Set fps at 30
     init_params.coordinate_system = sl.COORDINATE_SYSTEM.RIGHT_HANDED_Y_UP
 
     # If applicable, use the SVO given as parameter
@@ -65,11 +65,11 @@ if __name__ == "__main__":
     camera_info = zed.get_camera_information()
     # Create OpenGL viewer
     viewer = gl.GLViewer()
-    viewer.init(camera_info.calibration_parameters.left_cam)
+    viewer.init(camera_info.calibration_parameters.left_cam, obj_param.enable_tracking)
 
     # Configure object detection runtime parameters
     obj_runtime_param = sl.ObjectDetectionRuntimeParameters()
-    obj_runtime_param.detection_confidence_threshold = 50
+    obj_runtime_param.detection_confidence_threshold = 60
     obj_runtime_param.object_class_filter = [sl.OBJECT_CLASS.PERSON]    # Only detect Persons
 
     # Create ZED objects filled in the main loop

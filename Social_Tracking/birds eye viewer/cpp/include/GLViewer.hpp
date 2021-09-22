@@ -21,10 +21,10 @@
 #define M_PI 3.141592653f
 #endif
 
-#define MOUSE_R_SENSITIVITY 0.04f
-#define MOUSE_UZ_SENSITIVITY 0.75f
+#define MOUSE_R_SENSITIVITY 0.03f
+#define MOUSE_UZ_SENSITIVITY 0.5f
 #define MOUSE_DZ_SENSITIVITY 1.25f
-#define MOUSE_T_SENSITIVITY 100.f
+#define MOUSE_T_SENSITIVITY 0.05f
 #define KEY_T_SENSITIVITY 0.1f
 
 // Utils
@@ -231,7 +231,7 @@ public:
     ~GLViewer();
     bool isAvailable();
 
-    void init(int argc, char **argv, sl::CameraParameters& param);
+    void init(int argc, char **argv, sl::CameraParameters& param, bool isTrackingON);
     void updateData(sl::Mat& matXYZRGBA, std::vector<sl::ObjectData>& objs, sl::Transform &cam_pose);
 
     void exit();
@@ -273,6 +273,8 @@ private:
         DOWN = 'd',
         FREE = 'f'
     };
+
+	bool isTrackingON_ = false;
 
     bool mouseButton_[3];
     int mouseWheelPosition_;

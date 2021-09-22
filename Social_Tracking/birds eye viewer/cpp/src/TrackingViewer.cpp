@@ -8,14 +8,14 @@ inline cv::Point2f cvt(T pt, sl::float2 scale) {
     return cv::Point2f(pt.x * scale.x, pt.y * scale.y);
 }
 
-void render_2D(cv::Mat &left_display, sl::float2 img_scale, std::vector<sl::ObjectData> &objects, bool render_mask) {
+void render_2D(cv::Mat &left_display, sl::float2 img_scale, std::vector<sl::ObjectData> &objects, bool render_mask, bool isTrackingON) {
     cv::Mat overlay = left_display.clone();
     cv::Rect roi_render(0, 0, left_display.size().width, left_display.size().height);
 
     // render skeleton joints and bones
     for (auto i = objects.rbegin(); i != objects.rend(); ++i) {
         sl::ObjectData& obj = (*i);
-        if(renderObject(obj)) {
+        if(renderObject(obj, isTrackingON)) {
             if (obj.keypoint_2d.size()) {
                 cv::Scalar color = generateColorID_u(obj.id);
                 // skeleton joints
@@ -38,12 +38,16 @@ void render_2D(cv::Mat &left_display, sl::float2 img_scale, std::vector<sl::Obje
 	cv::Mat mask(left_display.rows, left_display.cols, CV_8UC1);
 
     const int line_thickness = 2;
+
     for (auto i = objects.rbegin(); i != objects.rend(); ++i) {
         sl::ObjectData& obj = (*i);
-        if(renderObject(obj)) {
+        if(renderObject(obj, isTrackingON)) {
             cv::Scalar base_color = generateColorID_u(obj.id);
 
-            // Display Image scaled bounding box 2D
+          // Display Image scaled bounding box 2D
+            if (obj.bounding_box_2d.size()<4)
+                continue;
+
             cv::Point top_left_corner = cvt(obj.bounding_box_2d[0], img_scale);
             cv::Point top_right_corner = cvt(obj.bounding_box_2d[1], img_scale);
             cv::Point bottom_right_corner = cvt(obj.bounding_box_2d[2], img_scale);
@@ -55,6 +59,7 @@ void render_2D(cv::Mat &left_display, sl::float2 img_scale, std::vector<sl::Obje
             // Creation of two vertical lines
             drawVerticalLine(left_display, bottom_left_corner, top_left_corner, base_color, line_thickness);
             drawVerticalLine(left_display, bottom_right_corner, top_right_corner, base_color, line_thickness);
+
 
             // scaled ROI
             cv::Rect roi(top_left_corner, bottom_right_corner);
@@ -77,8 +82,12 @@ void render_2D(cv::Mat &left_display, sl::float2 img_scale, std::vector<sl::Obje
                 putText(left_display, text, cv::Point2d(position_image.x - 20, position_image.y),
                         cv::FONT_HERSHEY_COMPLEX_SMALL, 0.5, cv::Scalar(255, 255, 255, 255), 1 );
             }
+
         }
+
     }
+
+
     // Here, overlay is as the left image, but with opaque masks on each detected objects
     cv::addWeighted(left_display, 0.7, overlay, 0.3, 0.0, left_display);
 }
@@ -107,8 +116,12 @@ void Tracklet::addDetectedPoint(const sl::ObjectData obj, uint64_t timestamp, in
 // -------------------------------------------------------
 //              TrackingViewer code
 // -------------------------------------------------------
+TrackingViewer::TrackingViewer()
+{
 
-TrackingViewer::TrackingViewer(sl::Resolution res, const int fps_, const float D_max)  {
+}
+
+TrackingViewer::TrackingViewer(sl::Resolution res, const int fps_, const float D_max,const int duration)  {
     // ----------- Default configuration -----------------
    
     // window size
@@ -140,13 +153,8 @@ TrackingViewer::TrackingViewer(sl::Resolution res, const int fps_, const float D
     // SMOOTH
     do_smooth = false;
 
-    // FPS 
-    frame_time_step = uint64_t(ceil(1000000000.0f / fps_));
-    // Show last 1.5 seconds
-    history_size = int(1.5f * fps_);
-
-    // Threshold to delete track
-    max_missing_points = std::max(fps_ / 6, 4);
+    // Show last 3.0 seconds
+    history_duration = (unsigned long long)duration * 1000ULL * 1000ULL * 1000ULL; //convert sc to ns
 
     // Smoothing window: 80ms
     smoothing_window_size = static_cast<int>(ceil(0.08f * fps_) + .5f);
@@ -182,7 +190,7 @@ void TrackingViewer::generate_view(sl::Objects &objects, sl::Pose current_camera
         uint64_t current_timestamp = objects.timestamp.getNanoseconds();
         addToTracklets(objects);
         detectUnchangedTrack(current_timestamp);
-        pruneOldPoints();
+        pruneOldPoints(current_timestamp);
 
         // Draw all tracklets
         drawTracklets(tracking_view, current_camera_pose);
@@ -220,7 +228,6 @@ void TrackingViewer::addToTracklets(sl::Objects &objects) {
 
         // In case this object does not belong to existing tracks
         if (new_object) {
-            // printf(" - Adding new tracklet with id: %u\n", id);
             Tracklet new_track(obj, obj.label, current_timestamp);
             tracklets.push_back(new_track);
         }
@@ -230,9 +237,9 @@ void TrackingViewer::addToTracklets(sl::Objects &objects) {
 void TrackingViewer::detectUnchangedTrack(uint64_t current_timestamp) {
     for (size_t track_index = 0; track_index < tracklets.size(); ++track_index) {
         Tracklet &track = tracklets[track_index];
-        if (track.last_detected_timestamp != current_timestamp) {
+        if (track.last_detected_timestamp < current_timestamp && track.last_detected_timestamp>0) {
             // If track missed more than N frames, delete it
-            if (current_timestamp - track.last_detected_timestamp >= (max_missing_points * frame_time_step)) {
+            if (current_timestamp - track.last_detected_timestamp >= history_duration) {
                 track.is_alive = false;
                 continue;
             }
@@ -240,14 +247,14 @@ void TrackingViewer::detectUnchangedTrack(uint64_t current_timestamp) {
     }
 }
 
-void TrackingViewer::pruneOldPoints() {
+void TrackingViewer::pruneOldPoints(uint64_t ts) {
     std::vector<size_t> track_to_delete; // If a dead track does not contain drawing points, juste erase it
     for (size_t track_index = 0; track_index < tracklets.size(); ++track_index) {
         if (tracklets[track_index].is_alive) {
-            while (tracklets[track_index].positions.size() > history_size) {
-                tracklets[track_index].positions.pop_front();
+            while (tracklets[track_index].positions.size()>0 && tracklets[track_index].positions.front().timestamp < ts - history_duration) {
+                tracklets[track_index].positions.pop_front();             
             }
-            while (tracklets[track_index].positions_to_draw.size() > history_size) {
+            while (tracklets[track_index].positions_to_draw.size()>0 && tracklets[track_index].positions_to_draw.front().timestamp < ts - history_duration) {
                 tracklets[track_index].positions_to_draw.pop_front();
             }
         } else { // Here, we fade the dead trajectories faster than the alive one (4 points every frame)
