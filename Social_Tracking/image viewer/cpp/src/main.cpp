@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
 	// Create ZED objects
 	Camera zed;
 	InitParameters init_parameters;
-	init_parameters.camera_resolution = RESOLUTION::HD2K;
+	init_parameters.camera_resolution = RESOLUTION::HD1080;
 	// On Jetson the object detection combined with an heavy depth mode could reduce the frame rate too much
 	init_parameters.depth_mode = isJetson ? DEPTH_MODE::PERFORMANCE : DEPTH_MODE::ULTRA;
 	init_parameters.coordinate_system = COORDINATE_SYSTEM::RIGHT_HANDED_Y_UP;
@@ -88,16 +88,17 @@ int main(int argc, char **argv) {
 	auto camera_info = zed.getCameraInformation().camera_configuration;
 	// Create OpenGL Viewer
 	GLViewer viewer;
-	viewer.init(argc, argv, camera_info.calibration_parameters.left_cam);
+	viewer.init(argc, argv, camera_info.calibration_parameters.left_cam, obj_det_params.enable_tracking = true);
 
 	// Configure object detection runtime parameters
 	ObjectDetectionRuntimeParameters objectTracker_parameters_rt;
-	objectTracker_parameters_rt.detection_confidence_threshold = 35;
+	int detection_confidence = 60;
+	objectTracker_parameters_rt.detection_confidence_threshold = detection_confidence;
 	// To select a set of specific object classes, like persons, vehicles and animals for instance:
 	objectTracker_parameters_rt.object_class_filter = {OBJECT_CLASS::PERSON /*, OBJECT_CLASS::VEHICLE, OBJECT_CLASS::ANIMAL*/ };
 	// To set a specific threshold
-	objectTracker_parameters_rt.object_class_detection_confidence_threshold[OBJECT_CLASS::PERSON] = 35;
-	//detection_parameters_rt.object_class_detection_confidence_threshold[OBJECT_CLASS::CAR] = 35;
+	objectTracker_parameters_rt.object_class_detection_confidence_threshold[OBJECT_CLASS::PERSON] = detection_confidence;
+	//detection_parameters_rt.object_class_detection_confidence_threshold[OBJECT_CLASS::CAR] = detection_confidence;
 
 	// Create ZED Objects filled in the main loop
 	Objects objects;

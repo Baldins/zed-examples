@@ -38,6 +38,7 @@ namespace sl
 {
     class MainWindow
     {
+        bool isTrackingON = false;
         GLViewer viewer;
         Camera zedCamera;
         ObjectDetectionRuntimeParameters obj_runtime_parameters;
@@ -49,7 +50,7 @@ namespace sl
         {
             // Set configuration parameters
             InitParameters init_params = new InitParameters();
-            init_params.resolution = RESOLUTION.HD720;
+            init_params.resolution = RESOLUTION.HD1080;
             init_params.cameraFPS = 60;
             init_params.depthMode = DEPTH_MODE.ULTRA;
             init_params.coordinateUnits = UNIT.METER;
@@ -64,21 +65,21 @@ namespace sl
             if (err != ERROR_CODE.SUCCESS)
                 Environment.Exit(-1);
 
-            if (zedCamera.CameraModel != sl.MODEL.ZED2)
-            {
-                Console.WriteLine(" ERROR : Use ZED2 Camera only");
-                return;
-            }
+			if (zedCamera.CameraModel == sl.MODEL.ZED)
+			{
+				Console.WriteLine(" ERROR : not compatible camera model");
+				return;
+			}
 
             // Enable tracking (mandatory for object detection)
-            Quaternion quat = Quaternion.Identity;
-            Vector3 vec = Vector3.Zero;
-            zedCamera.EnablePositionalTracking(ref quat, ref vec);
+            PositionalTrackingParameters trackingParams = new PositionalTrackingParameters();
+            zedCamera.EnablePositionalTracking(ref trackingParams);
 
             runtimeParameters = new RuntimeParameters();
             // Enable the Objects detection module
             ObjectDetectionParameters obj_det_params = new ObjectDetectionParameters();
             obj_det_params.enableObjectTracking = true; // the object detection will track objects across multiple images, instead of an image-by-image basis
+            isTrackingON = obj_det_params.enableObjectTracking;
             obj_det_params.enable2DMask = false;
             obj_det_params.enableBodyFitting = true; // smooth skeletons moves
             obj_det_params.imageSync = true; // the object detection is synchronized to the image
@@ -100,13 +101,14 @@ namespace sl
 
             // Configure object detection runtime parameters
             obj_runtime_parameters = new ObjectDetectionRuntimeParameters();
-            obj_runtime_parameters.detectionConfidenceThreshold = 35;
+			int detection_confidence = 60;
+            obj_runtime_parameters.detectionConfidenceThreshold = detection_confidence;
             obj_runtime_parameters.objectClassFilter = new int[(int)OBJECT_CLASS.LAST];
             obj_runtime_parameters.objectClassFilter[(int)sl.OBJECT_CLASS.PERSON] = Convert.ToInt32(true);
 
             // To set a specific threshold
             obj_runtime_parameters.objectConfidenceThreshold = new int[(int)OBJECT_CLASS.LAST];
-            obj_runtime_parameters.objectConfidenceThreshold[(int)sl.OBJECT_CLASS.PERSON] = 35;
+            obj_runtime_parameters.objectConfidenceThreshold[(int)sl.OBJECT_CLASS.PERSON] = detection_confidence;
 
             // Create OpenGL window
             CreateWindow();
@@ -151,7 +153,14 @@ namespace sl
 
                 nativeWindow.Create((int)(zedCamera.ImageWidth * 0.05f), (int)(zedCamera.ImageHeight * 0.05f), (uint)width, (uint)height, NativeWindowStyle.Resizeable);
                 nativeWindow.Show();
-                nativeWindow.Run();
+                try
+                {
+                    nativeWindow.Run();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine("Mouse wheel is broken in the current OPENGL .NET VERSION. Please do not use it.");
+                }
             }
         }
 
@@ -169,7 +178,7 @@ namespace sl
             Gl.Enable(EnableCap.LineSmooth);
             Gl.Hint(HintTarget.LineSmoothHint, HintMode.Nicest);
 
-            viewer.init(zedCamera.GetCalibrationParameters().leftCam);
+            viewer.init(zedCamera.GetCalibrationParameters().leftCam, isTrackingON);
         }
 
         // Render loop
